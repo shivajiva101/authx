@@ -534,8 +534,8 @@ local function display_record(caller, target)
 	for i,v in ipairs(r) do
 		table.insert(names, v.name)
 	end
-	bld[#bld+1] = minetest.colorize("#00FFFF", "\n[authx] records for: ") .. target
-	bld[#bld+1] = minetest.colorize("#00FFFF", "\nNames: ") .. table.concat(names, ", ")
+	bld[#bld+1] = minetest.colorize("#00FFFF", "[sban] records for: ") .. target
+	bld[#bld+1] = minetest.colorize("#00FFFF", "Names: ") .. table.concat(names, ", ")
 
 	local privs = minetest.get_player_privs(caller)
 
@@ -543,11 +543,11 @@ local function display_record(caller, target)
 	local idx = 1
 	if #r > display_max then
 		idx = #r - display_max
-		bld[#bld+1] = minetest.colorize("#00FFFF", "\nName records: ")..#r..
+		bld[#bld+1] = minetest.colorize("#00FFFF", "Name records: ")..#r..
 		minetest.colorize("#00FFFF", " (showing last ")..display_max..
 		minetest.colorize("#00FFFF", " records)")
 	else
-		bld[#bld+1] = minetest.colorize("#00FFFF", "\nName records: ")..#r
+		bld[#bld+1] = minetest.colorize("#00FFFF", "Name records: ")..#r
 	end
 	for i = idx, #r do
 		local d1 = hrdf(r[i].created)
@@ -560,11 +560,11 @@ local function display_record(caller, target)
 		r = address_records(id)
 		if #r > display_max then
 			idx = #r - display_max
-			bld[#bld+1] = minetest.colorize("#0FF", "\nIP records: ") .. #r ..
+			bld[#bld+1] = minetest.colorize("#0FF", "IP records: ") .. #r ..
 			minetest.colorize("#0FF", " (showing last ") .. display_max ..
 			minetest.colorize("#0FF", " records)")
 		else
-			bld[#bld+1] = minetest.colorize("#0FF", "\nIP records: ") .. #r
+			bld[#bld+1] = minetest.colorize("#0FF", "IP records: ") .. #r
 			idx = 1
 		end
 		for i = idx, #r do
@@ -581,15 +581,15 @@ local function display_record(caller, target)
 				i, v.id, v.ip, hrdf(v.created), hrdf(v.last_login))
 			end
 		else
-			bld[#bld+1] = minetest.colorize("#0FF", "\nNo violation records for ") .. target
+			bld[#bld+1] = minetest.colorize("#0FF", "No violation records for ") .. target
 		end
 	end
 
-	r = expired_bans(id) or {}
-	bld[#bld+1] = minetest.colorize("#0FF", "\nBan records:")
+	r = player_ban_expired(id) or {}
+	bld[#bld+1] = minetest.colorize("#0FF", "Ban records:")
 	if #r > 0 then
 
-		bld[#bld+1] = minetest.colorize("#0FF", "\nExpired records: ")..#r
+		bld[#bld+1] = minetest.colorize("#0FF", "Expired records: ")..#r
 
 		for i, e in ipairs(r) do
 			local d1 = hrdf(e.created)
@@ -605,12 +605,12 @@ local function display_record(caller, target)
 		end
 
 	else
-		bld[#bld+1] = "\nNo expired ban records!"
+		bld[#bld+1] = "No expired ban records!"
 	end
 
 	r = bans[id]
 	local ban = tostring(r ~= nil)
-	bld[#bld+1] = minetest.colorize("#0FF", "\nCurrent Ban Status:")
+	bld[#bld+1] = minetest.colorize("#0FF", "Current Ban Status:")
 	if ban == 'true' then
 		local expires = "never"
 		local d = hrdf(r.created)
@@ -619,9 +619,11 @@ local function display_record(caller, target)
 		end
 		bld[#bld+1] = ("Name: %s Created: %s Banned by: %s Reason: %s Expires: %s"
 		):format(r.name, d, r.source, r.reason, expires)
+	else
+		bld[#bld+1] = "no active ban record!"
 	end
-	bld[#bld+1] = minetest.colorize("#0FF", "\nBanned: ")..ban
-	minetest.chat_send_player(caller, table.concat(bld, "\n"))
+	bld[#bld+1] = minetest.colorize("#0FF", "Banned: ")..ban
+	return table.concat(bld, "\n")
 end
 
 -- Fetch names like 'name'
@@ -1863,7 +1865,7 @@ local current_version = get_setting("db_version")
 if not current_version then -- first run
 	init_setting('db_version', db_version)
 	init_setting('mod_version', mod_version)
-elseif current_version == "0.1" then
+elseif not current_version == db_version then
 	error("You must update authx database to "..db_version..
 	"\nUse sqlite3 to import /tools/authban_update.sql")
 end
@@ -1934,6 +1936,19 @@ local function clean_join_cache(name)
 	end
 end
 
+-- fix irc mod with an override
+if irc then -- luacheck: ignore
+    irc.reply = function(message) -- luacheck: ignore
+        if not irc.last_from then -- luacheck: ignore
+            return
+        end
+        message = message:gsub("[\r\n%z]", " \\n ")
+        local helper = string.split(message, "\\n")
+        for i,v in ipairs(helper) do
+            irc.say(irc.last_from, minetest.strip_colors(v)) -- luacheck: ignore
+        end
+    end
+end
 
 --[[
 ###########
@@ -2277,8 +2292,7 @@ minetest.register_chatcommand("ban_record", {
 		if not source.server and chk then
 			return false, "Insufficient privileges to access that information"
 		end
-		display_record(name, playername)
-		return true
+		return true, display_record(name, playername)
 	end
 })
 
@@ -2466,7 +2480,7 @@ minetest.register_chatcommand("/whois", {
 		end
 		local names = name_records(id)
 		local ips = address_records(id)
-		local msg = minetest.colorize("#FFC000", "\nNames: ")
+		local msg = "\n" .. minetest.colorize("#FFC000", "Names: ")
 		local n, a = {}, {}
 		for i, v in ipairs(names) do
 			n[#n+1] = v.name
@@ -2476,13 +2490,13 @@ minetest.register_chatcommand("/whois", {
 		end
 		msg = msg .. table.concat(n, ", ")
 		if #list > 1 and list[2] == "v" then
-			msg = msg .. minetest.colorize("#FFC000", "\nIP Addresses: ")
-			msg = msg .. table.concat(a, ", ")
+			msg = msg .. minetest.colorize("#FFC000", "IP Addresses: ")
+			msg = msg .. "\n" .. table.concat(a, ", ")
 		else
-			msg = msg .. minetest.colorize("#FFC000", "\nLast IP Address: ")
+			msg = msg .. "\n" .. minetest.colorize("#FFC000", "Last IP Address: ")
 			msg = msg .. a[1]
 		end
-		return false, minetest.colorize("#FFC000", "Info for: ") .. pname .. msg
+		return true, minetest.colorize("#FFC000", "Info for: ") .. pname .. msg
 	end,
 })
 
