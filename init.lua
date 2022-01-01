@@ -140,12 +140,6 @@ if debug then
 
 end
 
---[[
-##########################
-###  Helper Functions  ###
-##########################
-]]
-
 -- Db wrapper for error reporting
 ---@param stmt string containing SQL statements
 -- returns true or false with error message
@@ -158,25 +152,12 @@ local function db_exec(stmt)
 	end
 end
 
--- Convert value to seconds (src: xban2)
----@param str string containing alphanumerical duration
--- returns integer seconds of duration
-local function parse_time(str)
-	local s = 0
-	for n, u in str:gmatch("(%d+)([smhdwySHDWMY]?)") do
-		s = s + (tonumber(n) * (t_units[u] or 1))
-	end
-	return s
-end
 
--- Convert UTC to human readable date format
----@param utc_int integer, seconds since epoch
--- returns datetime string
-local function hrdf(utc_int)
-	if type(utc_int) == "number" then
-		return (utc_int and os.date("%c", utc_int))
-	end
-end
+--[[
+##########################
+###  Helper Functions  ###
+##########################
+]]
 
 -- Check if param is an ip address
 ---@param str string
@@ -205,171 +186,6 @@ local function ip_key(str)
 	return result
 end
 
--- Incrememnts db id
--- returns id
-local function inc_id()
-	ID = ID + 1
-	return ID
-end
-
-if importer then
-
-	createDb = [[
-	CREATE TABLE IF NOT EXISTS active (
-		id INTEGER(10) PRIMARY KEY,
-		name VARCHAR(50),
-		source VARCHAR(50),
-		created INTEGER(30),
-		reason VARCHAR(300),
-		expires INTEGER(30),
-		pos VARCHAR(50)
-	);
-
-	CREATE TABLE IF NOT EXISTS auth (
-	id INTEGER(10),
-	name VARCHAR(32) PRIMARY KEY,
-	password VARCHAR(512),
-	privileges VARCHAR(512),
-	last_login INTEGER(30),
-	login_count INTEGER(8) DEFAULT(1),
-	created INTEGER(30)
-	);
-	CREATE INDEX IF NOT EXISTS idx_auth_id ON auth(id);
-
-	CREATE TABLE IF NOT EXISTS expired (
-		id INTEGER(10),
-		name VARCHAR(50),
-		source VARCHAR(50),
-		created INTEGER(30),
-		reason VARCHAR(300),
-		expires INTEGER(30),
-		u_source VARCHAR(50),
-		u_reason VARCHAR(300),
-		u_date INTEGER(30),
-		last_pos VARCHAR(50)
-	);
-	CREATE INDEX IF NOT EXISTS idx_expired_id ON expired(id);
-
-	CREATE TABLE IF NOT EXISTS address (
-		id INTEGER(10),
-		ip VARCHAR(50) PRIMARY KEY,
-		created INTEGER(30),
-		last_login INTEGER(30),
-		login_count INTEGER(8) DEFAULT(1),
-		violation BOOLEAN
-	);
-	CREATE INDEX IF NOT EXISTS idx_address_id ON address(id);
-	CREATE INDEX IF NOT EXISTS idx_address_lastlogin ON address(last_login);
-
-	CREATE TABLE IF NOT EXISTS whitelist (
-		name_or_ip VARCHAR(50) PRIMARY KEY,
-		source VARCHAR(50),
-		created INTEGER(30)
-	);
-
-	CREATE TABLE IF NOT EXISTS blacklist (
-		name_or_ip VARCHAR(50) PRIMARY KEY,
-		reason VARCHAR(300),
-		source VARCHAR(50),
-		created INTEGER(30)
-	);
-
-	CREATE TABLE IF NOT EXISTS config (
-		setting VARCHAR(28) PRIMARY KEY,
-		data VARCHAR(255)
-	);
-
-	CREATE TABLE IF NOT EXISTS violation (
-		id INTEGER PRIMARY KEY,
-		data VARCHAR
-	);
-
-	]]
-	db_exec(createDb)
-
-	tmp_db = [[
-	CREATE TABLE IF NOT EXISTS auth_tmp (
-		id INTEGER(10),
-		name VARCHAR(32),
-		password VARCHAR(512),
-		privileges VARCHAR(512),
-		last_login INTEGER(30),
-		login_count INTEGER(8) DEFAULT(1),
-		created INTEGER(30)
-	);
-
-	CREATE TABLE IF NOT EXISTS address_tmp (
-		id INTEGER(10),
-		ip VARCHAR(50),
-		created INTEGER(30),
-		last_login INTEGER(30),
-		login_count INTEGER(8) DEFAULT(1),
-		violation BOOLEAN
-	);
-
-	CREATE TABLE IF NOT EXISTS active_tmp (
-		id INTEGER(10),
-		name VARCHAR(50),
-		source VARCHAR(50),
-		created INTEGER(30),
-		reason VARCHAR(300),
-		expires INTEGER(30),
-		pos VARCHAR(50)
-	);
-
-	CREATE TABLE IF NOT EXISTS expired_tmp (
-		id INTEGER(10),
-		name VARCHAR(50),
-		source VARCHAR(50),
-		created INTEGER(30),
-		reason VARCHAR(300),
-		expires INTEGER(30),
-		u_source VARCHAR(50),
-		u_reason VARCHAR(300),
-		u_date INTEGER(30),
-		last_pos VARCHAR(50)
-	);
-
-	]]
-
-	tmp_final = [[
-
-	-- remove duplicate data
-	DELETE FROM auth_tmp WHERE rowid NOT IN (
-		SELECT min(rowid) FROM auth_tmp GROUP BY name);
-
-	DELETE FROM address_tmp WHERE rowid NOT IN (
-		SELECT min(rowid) FROM address_tmp GROUP BY ip);
-
-	DELETE FROM active_tmp where rowid NOT IN (
-		SELECT min(rowid) FROM active_tmp GROUP BY id);
-
-	-- insert distinct data
-	INSERT INTO auth
-		SELECT * FROM auth_tmp WHERE name NOT IN (SELECT name FROM auth);
-
-	INSERT INTO address
-		SELECT * FROM address_tmp WHERE ip NOT IN (SELECT ip FROM address);
-
-	INSERT INTO active
-		SELECT * FROM active_tmp WHERE id NOT IN (SELECT id FROM active);
-
-	INSERT INTO expired
-		SELECT * FROM expired_tmp;
-
-	-- clean up
-	DROP TABLE auth_tmp;
-	DROP TABLE address_tmp;
-	DROP TABLE active_tmp;
-	DROP TABLE expired_tmp;
-
-	COMMIT;
-
-	PRAGMA foreign_keys = ON;
-
-	VACUUM;
-	]]
-end
 
 --[[
 ###########################
@@ -377,34 +193,25 @@ end
 ###########################
 ]]
 
--- Fetch an id for an ip or name
----@param name_or_ip string
--- returns id integer
-local function get_id(name_or_ip)
-	local q
-	if is_ip(name_or_ip) then
-		-- check cache first
-		if ip_cache[ip_key(name_or_ip)] then
-			return ip_cache[ip_key(name_or_ip)]
-		end
-		-- check db
-		q = ([[
-			SELECT id
-			FROM address
-			WHERE ip = '%s' LIMIT 1;]]
-		):format(name_or_ip)
-	else
-		-- check cache first
-		if auth_cache[name_or_ip] then
-			return auth_cache[name_or_ip].id
-		end
-		-- check db
-		q = ([[
-			SELECT id
-			FROM auth
-			WHERE name = '%s' LIMIT 1;]]
-		):format(name_or_ip)
+local function get_id_by_name(name)
+	local q = ([[
+		SELECT id
+		FROM auth
+		WHERE name = '%s' LIMIT 1;]]
+		):format(name)
+		local it, state = db:nrows(q)
+	local row = it(state)
+	if row then
+		return row.id
 	end
+end
+
+local function get_id_by_ip(ip_address)
+	local q = ([[
+		SELECT id
+		FROM address
+		WHERE ip = '%s' LIMIT 1;]]
+	):format(ip_address)
 	local it, state = db:nrows(q)
 	local row = it(state)
 	if row then
@@ -919,6 +726,217 @@ end
 ###################
 ]]
 
+
+-- Convert value to seconds (src: xban2)
+---@param str string containing alphanumerical duration
+-- returns integer seconds of duration
+local function parse_time(str)
+	local s = 0
+	for n, u in str:gmatch("(%d+)([smhdwySHDWMY]?)") do
+		s = s + (tonumber(n) * (t_units[u] or 1))
+	end
+	return s
+end
+
+-- Convert UTC to human readable date format
+---@param utc_int integer, seconds since epoch
+-- returns datetime string
+local function hrdf(utc_int)
+	if type(utc_int) == "number" then
+		return (utc_int and os.date("%c", utc_int))
+	end
+end
+
+-- Incrememnts db id
+-- returns id
+local function inc_id()
+	ID = ID + 1
+	return ID
+end
+
+-- Fetch an id for an ip or name
+---@param name_or_ip string
+-- returns id integer
+local function get_id(name_or_ip)
+	local id
+	if is_ip(name_or_ip) then
+		-- check cache first
+		if ip_cache[ip_key(name_or_ip)] then
+			return ip_cache[ip_key(name_or_ip)]
+		end
+		-- check db
+		id = get_id_by_ip(name_or_ip)
+
+	else
+		-- check cache first
+		if auth_cache[name_or_ip] then
+			return auth_cache[name_or_ip].id
+		end
+
+		-- check db
+		id = get_id_by_name(name_or_ip)
+	end
+	return id
+end
+
+if importer then
+
+	createDb = [[
+	CREATE TABLE IF NOT EXISTS active (
+		id INTEGER(10) PRIMARY KEY,
+		name VARCHAR(50),
+		source VARCHAR(50),
+		created INTEGER(30),
+		reason VARCHAR(300),
+		expires INTEGER(30),
+		pos VARCHAR(50)
+	);
+
+	CREATE TABLE IF NOT EXISTS auth (
+	id INTEGER(10),
+	name VARCHAR(32) PRIMARY KEY,
+	password VARCHAR(512),
+	privileges VARCHAR(512),
+	last_login INTEGER(30),
+	login_count INTEGER(8) DEFAULT(1),
+	created INTEGER(30)
+	);
+	CREATE INDEX IF NOT EXISTS idx_auth_id ON auth(id);
+
+	CREATE TABLE IF NOT EXISTS expired (
+		id INTEGER(10),
+		name VARCHAR(50),
+		source VARCHAR(50),
+		created INTEGER(30),
+		reason VARCHAR(300),
+		expires INTEGER(30),
+		u_source VARCHAR(50),
+		u_reason VARCHAR(300),
+		u_date INTEGER(30),
+		last_pos VARCHAR(50)
+	);
+	CREATE INDEX IF NOT EXISTS idx_expired_id ON expired(id);
+
+	CREATE TABLE IF NOT EXISTS address (
+		id INTEGER(10),
+		ip VARCHAR(50) PRIMARY KEY,
+		created INTEGER(30),
+		last_login INTEGER(30),
+		login_count INTEGER(8) DEFAULT(1),
+		violation BOOLEAN
+	);
+	CREATE INDEX IF NOT EXISTS idx_address_id ON address(id);
+	CREATE INDEX IF NOT EXISTS idx_address_lastlogin ON address(last_login);
+
+	CREATE TABLE IF NOT EXISTS whitelist (
+		name_or_ip VARCHAR(50) PRIMARY KEY,
+		source VARCHAR(50),
+		created INTEGER(30)
+	);
+
+	CREATE TABLE IF NOT EXISTS blacklist (
+		name_or_ip VARCHAR(50) PRIMARY KEY,
+		reason VARCHAR(300),
+		source VARCHAR(50),
+		created INTEGER(30)
+	);
+
+	CREATE TABLE IF NOT EXISTS config (
+		setting VARCHAR(28) PRIMARY KEY,
+		data VARCHAR(255)
+	);
+
+	CREATE TABLE IF NOT EXISTS violation (
+		id INTEGER PRIMARY KEY,
+		data VARCHAR
+	);
+
+	]]
+	db_exec(createDb)
+
+	tmp_db = [[
+	CREATE TABLE IF NOT EXISTS auth_tmp (
+		id INTEGER(10),
+		name VARCHAR(32),
+		password VARCHAR(512),
+		privileges VARCHAR(512),
+		last_login INTEGER(30),
+		login_count INTEGER(8) DEFAULT(1),
+		created INTEGER(30)
+	);
+
+	CREATE TABLE IF NOT EXISTS address_tmp (
+		id INTEGER(10),
+		ip VARCHAR(50),
+		created INTEGER(30),
+		last_login INTEGER(30),
+		login_count INTEGER(8) DEFAULT(1),
+		violation BOOLEAN
+	);
+
+	CREATE TABLE IF NOT EXISTS active_tmp (
+		id INTEGER(10),
+		name VARCHAR(50),
+		source VARCHAR(50),
+		created INTEGER(30),
+		reason VARCHAR(300),
+		expires INTEGER(30),
+		pos VARCHAR(50)
+	);
+
+	CREATE TABLE IF NOT EXISTS expired_tmp (
+		id INTEGER(10),
+		name VARCHAR(50),
+		source VARCHAR(50),
+		created INTEGER(30),
+		reason VARCHAR(300),
+		expires INTEGER(30),
+		u_source VARCHAR(50),
+		u_reason VARCHAR(300),
+		u_date INTEGER(30),
+		last_pos VARCHAR(50)
+	);
+
+	]]
+
+	tmp_final = [[
+
+	-- remove duplicate data
+	DELETE FROM auth_tmp WHERE rowid NOT IN (
+		SELECT min(rowid) FROM auth_tmp GROUP BY name);
+
+	DELETE FROM address_tmp WHERE rowid NOT IN (
+		SELECT min(rowid) FROM address_tmp GROUP BY ip);
+
+	DELETE FROM active_tmp where rowid NOT IN (
+		SELECT min(rowid) FROM active_tmp GROUP BY id);
+
+	-- insert distinct data
+	INSERT INTO auth
+		SELECT * FROM auth_tmp WHERE name NOT IN (SELECT name FROM auth);
+
+	INSERT INTO address
+		SELECT * FROM address_tmp WHERE ip NOT IN (SELECT ip FROM address);
+
+	INSERT INTO active
+		SELECT * FROM active_tmp WHERE id NOT IN (SELECT id FROM active);
+
+	INSERT INTO expired
+		SELECT * FROM expired_tmp;
+
+	-- clean up
+	DROP TABLE auth_tmp;
+	DROP TABLE address_tmp;
+	DROP TABLE active_tmp;
+	DROP TABLE expired_tmp;
+
+	COMMIT;
+
+	PRAGMA foreign_keys = ON;
+
+	VACUUM;
+	]]
+end
 
 -- Kicks players by name or id
 ---@param name_or_id string or integer
