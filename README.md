@@ -1,3 +1,7 @@
+[![Build status](https://github.com/shivajiva101/authx/workflows/Check%20&%20Release/badge.svg)](https://github.com/shivajiva101/authx/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+
 # authx
 
 If you use sauth and sban then this mod is for you, it combines the functionality of both in
