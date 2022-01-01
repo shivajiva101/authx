@@ -66,8 +66,8 @@ local t_units = {
 	M = 2592000, y = 31104000, Y = 31104000, [""] = 1
 }
 
+cap = 0 -- initialse
 authx = {}
-cap = 0
 
 dofile(MP .. "/restrictions.lua")
 
@@ -81,14 +81,14 @@ dofile(MP .. "/restrictions.lua")
 if minetest.settings then
 	expiry = minetest.settings:get("authx.ban_max")
 	owner = minetest.settings:get("name")
-	def_duration = minetest.settings:get("authx.fs_duration", "1w")
-	display_max = tonumber(minetest.settings:get("authx.display_max", 10))
+	def_duration = minetest.settings:get("authx.fs_duration") or "1w"
+	display_max = tonumber(minetest.settings:get("authx.display_max")) or 10
 	names_per_id = tonumber(minetest.settings:get("authx.accounts_per_id"))
 	ip_limit = tonumber(minetest.settings:get("authx.ip_limit"))
-	importer = minetest.settings:get_bool("authx.import_enabled", true)
-	HL_Max = tonumber(minetest.settings:get("authx.hotlist_max", 15))
-	max_cache_records = tonumber(minetest.settings:get("authx.cache.max", 1000))
-	ttl = tonumber(minetest.settings:get("authx.cache.ttl", 86400))
+	importer = minetest.settings:get_bool("authx.import_enabled") or true
+	HL_Max = tonumber(minetest.settings:get("authx.hotlist_max")) or 15
+	max_cache_records = tonumber(minetest.settings:get("authx.cache.max")) or 1000
+	ttl = tonumber(minetest.settings:get("authx.cache.ttl")) or 86400
 else
 	expiry = minetest.setting_get("authx.ban_max")
 	owner = minetest.setting_get("name")
