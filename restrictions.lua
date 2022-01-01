@@ -92,7 +92,7 @@ minetest.register_on_prejoinplayer(function(name,ip)
 	local re = stripped_name:gsub(all_chars, char_map)
 	re = "^[_-]*" .. re .. "[_-]*$"
 
-	for authName in pairs(auth_get_names()) do
+	for authName in pairs(authx.auth_handler.iterate) do -- luacheck: ignore
 		if authName ~= name and authName:match(re) then
 			return "Your name is too similar to another player's name."
 		end
