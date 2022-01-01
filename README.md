@@ -35,6 +35,9 @@ using the arrows that appear.
 
 ``` Usage: /bang ```
 
+<b>Please note</b> accessing the gui formspec using a modified client without serverside
+privs is coded to ban the player
+
 #### ban
 
 Bans a player permanently.
@@ -255,6 +258,3 @@ If you don't add this setting authx will use the value above as the default. Dis
 
 Thanks to:
 
-Shara for suggesting improvements and editing documentation.
-rubenwardy for suggesting improvements to the interface layout.
-sofar for requesting a gui and suggesting the hotlist concept.
