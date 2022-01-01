@@ -66,7 +66,9 @@ local t_units = {
 	M = 2592000, y = 31104000, Y = 31104000, [""] = 1
 }
 
-cap = 0 -- initialse
+cap = 0 -- initialise
+
+-- authx API global
 authx = {}
 
 dofile(MP .. "/restrictions.lua")
@@ -157,7 +159,7 @@ local function db_exec(stmt)
 end
 
 -- Convert value to seconds (src: xban2)
----@param t string containing alphanumerical duration
+---@param str string containing alphanumerical duration
 -- returns integer seconds of duration
 local function parse_time(str)
 	local s = 0
@@ -573,7 +575,7 @@ local function auth_check_name(name)
 end
 
 -- Create table of names for iteration
--- returns table list of names
+-- returns keypair table of names
 local function auth_get_names()
 	local r,q = {}
 	q = "SELECT name FROM auth;"
@@ -583,67 +585,29 @@ local function auth_get_names()
 	return r
 end
 
--- Build name and address cache
-local function build_cache()
-	-- get last login timestamp
+--- Fetch utc timestamp of the last login
+local function last_login_timestamp()
 	local q = "SELECT max(last_login) AS login FROM auth;"
 	local it, state = db:nrows(q)
-	local last = it(state)
-	if last.login then
-		last = last.login - ttl -- adjust
-		q = ([[
+	return it(state)
+end
+
+--- Fetch name list for players logging in after utc_int
+---@param utc_int integer
+-- returns ipair table of auth records
+local function auth_cache_names(utc_int)
+	local r = {}
+	local q = ([[
 		SELECT *
 		FROM auth
 		WHERE last_login > %i
 		ORDER BY last_login ASC LIMIT %s;
-		]]):format(last, max_cache_records)
-		for row in db:nrows(q) do
-			auth_cache[row.name] = {
-				password = row.password,
-				privileges = minetest.string_to_privs(row.privileges),
-				last_login = row.last_login,
-				login_count = row.login_count,
-				created = row.created
-			}
-			cap = cap + 1
-		end
-		minetest.log("action", "[authx] caching " .. cap .. " auth records")
-		local ctr = 0
-		for k, row in pairs(auth_cache) do
-			local res = address_records(row.id)
-			if res then
-				for _,v in ipairs(res) do
-					ip_cache[ip_key(v.ip)] = row.id
-					ctr = ctr + 1
-				end
-			end
-		end
-		minetest.log("action", "[authx] caching " .. ctr .. " ip records")
+		]]):format(utc_int, max_cache_records)
+	for row in db:nrows(q) do
+		r[#r+1] = row
 	end
+	return r
 end
-
--- Manage cache size
-local function trim_cache()
-	if cap < max_cache_records then return end
-	local earliest = os.time()
-	local name, id
-	for key, record in pairs(auth_cache) do
-		if record.last_login < earliest then
-			earliest = record.last_login
-			name = key
-			id = record.id
-		end
-	end
-	for k,v in pairs(ip_cache) do
-		if v == id then
-			ip_cache[k] = nil
-		end
-	end
-	auth_cache[name] = nil
-	cap = cap - 1
-end
-
-build_cache()
 
 
 --[[
@@ -1334,6 +1298,64 @@ local function del_ban(id)
 		):format(id))
 	end
 	return r
+end
+
+-- Build name and address cache
+local function build_cache()
+
+	local last = last_login_timestamp()
+
+	if last and last.login then
+		local result = auth_cache_names(last.login - ttl)
+		if #result > 0 then
+			for _, v in ipairs(result) do
+				auth_cache[v.name] = {
+					id = v.id,
+					password = v.password,
+					privileges = minetest.string_to_privs(v.privileges),
+					last_login = v.last_login,
+					login_count = v.login_count,
+					created = v.created
+				}
+				cap = cap + 1
+			end
+		end
+
+		minetest.log("action", "[authx] caching " .. cap .. " auth records")
+
+		local ctr = 0
+		for k, row in pairs(auth_cache) do
+			for _,v in ipairs(address_records(row.id)) do
+				ip_cache[ip_key(v.ip)] = row.id
+				ctr = ctr + 1
+			end
+		end
+
+		minetest.log("action", "[authx] caching " .. ctr .. " ip records")
+
+	end
+end
+build_cache()
+
+-- Manage cache size
+local function trim_cache()
+	if cap < max_cache_records then return end
+	local earliest = os.time()
+	local name, id
+	for key, record in pairs(auth_cache) do
+		if record.last_login < earliest then
+			earliest = record.last_login
+			name = key
+			id = record.id
+		end
+	end
+	for k,v in pairs(ip_cache) do
+		if v == id then
+			ip_cache[k] = nil
+		end
+	end
+	auth_cache[name] = nil
+	cap = cap - 1
 end
 
 -- Display player data in the console
