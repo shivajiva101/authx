@@ -1,10 +1,4 @@
 --[[
-	comments
-
-
-]]
-
---[[
 authx mod for Minetest designed and coded by shivajiva101@hotmail.com
 
 request an insecure enviroment to load the db handler
@@ -154,7 +148,7 @@ end
 ##########################
 ]]
 
--- Db wrapper for error reporting
+-- Execute sqlite statement on current db
 ---@param s string containing SQL statements
 -- returns true or false with error message
 local function db_exec(s)
@@ -175,14 +169,14 @@ local function is_ip(str)
 	end
 end
 
--- Escapes special chars in reason string
+-- Escape special chars in a string
 ---@param str string
 -- returns escaped string
 local function escape_string(str)
 	return str:gsub("'", "''")
 end
 
--- Formats ip string for keypair use
+-- Format ip string for keypair use
 ---@param str string
 -- returns formatted string
 local function ip_key(str)
@@ -192,13 +186,173 @@ local function ip_key(str)
 end
 
 
+if importer then
+
+	createDb = [[
+	CREATE TABLE IF NOT EXISTS active (
+		id INTEGER(10) PRIMARY KEY,
+		name VARCHAR(50),
+		source VARCHAR(50),
+		created INTEGER(30),
+		reason VARCHAR(300),
+		expires INTEGER(30),
+		pos VARCHAR(50)
+	);
+
+	CREATE TABLE IF NOT EXISTS auth (
+	id INTEGER(10),
+	name VARCHAR(32) PRIMARY KEY,
+	password VARCHAR(512),
+	privileges VARCHAR(512),
+	last_login INTEGER(30),
+	login_count INTEGER(8) DEFAULT(1),
+	created INTEGER(30)
+	);
+	CREATE INDEX IF NOT EXISTS idx_auth_id ON auth(id);
+	CREATE INDEX IF NOT EXISTS idx_auth_name ON auth(name);
+
+	CREATE TABLE IF NOT EXISTS expired (
+		id INTEGER(10),
+		name VARCHAR(50),
+		source VARCHAR(50),
+		created INTEGER(30),
+		reason VARCHAR(300),
+		expires INTEGER(30),
+		u_source VARCHAR(50),
+		u_reason VARCHAR(300),
+		u_date INTEGER(30),
+		last_pos VARCHAR(50)
+	);
+	CREATE INDEX IF NOT EXISTS idx_expired_id ON expired(id);
+
+	CREATE TABLE IF NOT EXISTS address (
+		id INTEGER(10),
+		ip VARCHAR(50) PRIMARY KEY,
+		created INTEGER(30),
+		last_login INTEGER(30),
+		login_count INTEGER(8) DEFAULT(1),
+		violation BOOLEAN
+	);
+	CREATE INDEX IF NOT EXISTS idx_address_id ON address(id);
+	CREATE INDEX IF NOT EXISTS idx_address_lastlogin ON address(last_login);
+
+	CREATE TABLE IF NOT EXISTS whitelist (
+		name_or_ip VARCHAR(50) PRIMARY KEY,
+		source VARCHAR(50),
+		created INTEGER(30)
+	);
+
+	CREATE TABLE IF NOT EXISTS blacklist (
+		name_or_ip VARCHAR(50) PRIMARY KEY,
+		reason VARCHAR(300),
+		source VARCHAR(50),
+		created INTEGER(30)
+	);
+
+	CREATE TABLE IF NOT EXISTS config (
+		setting VARCHAR(28) PRIMARY KEY,
+		data VARCHAR(255)
+	);
+
+	CREATE TABLE IF NOT EXISTS violation (
+		id INTEGER PRIMARY KEY,
+		data VARCHAR
+	);
+
+	]]
+	db_exec(createDb)
+
+	tmp_db = [[
+	CREATE TABLE IF NOT EXISTS auth_tmp (
+		id INTEGER(10),
+		name VARCHAR(32),
+		password VARCHAR(512),
+		privileges VARCHAR(512),
+		last_login INTEGER(30),
+		login_count INTEGER(8) DEFAULT(1),
+		created INTEGER(30)
+	);
+
+	CREATE TABLE IF NOT EXISTS address_tmp (
+		id INTEGER(10),
+		ip VARCHAR(50),
+		created INTEGER(30),
+		last_login INTEGER(30),
+		login_count INTEGER(8) DEFAULT(1),
+		violation BOOLEAN
+	);
+
+	CREATE TABLE IF NOT EXISTS active_tmp (
+		id INTEGER(10),
+		name VARCHAR(50),
+		source VARCHAR(50),
+		created INTEGER(30),
+		reason VARCHAR(300),
+		expires INTEGER(30),
+		pos VARCHAR(50)
+	);
+
+	CREATE TABLE IF NOT EXISTS expired_tmp (
+		id INTEGER(10),
+		name VARCHAR(50),
+		source VARCHAR(50),
+		created INTEGER(30),
+		reason VARCHAR(300),
+		expires INTEGER(30),
+		u_source VARCHAR(50),
+		u_reason VARCHAR(300),
+		u_date INTEGER(30),
+		last_pos VARCHAR(50)
+	);
+
+	]]
+
+	tmp_final = [[
+
+	-- remove duplicate data
+	DELETE FROM auth_tmp WHERE rowid NOT IN (
+		SELECT min(rowid) FROM auth_tmp GROUP BY name);
+
+	DELETE FROM address_tmp WHERE rowid NOT IN (
+		SELECT min(rowid) FROM address_tmp GROUP BY ip);
+
+	DELETE FROM active_tmp where rowid NOT IN (
+		SELECT min(rowid) FROM active_tmp GROUP BY id);
+
+	-- insert distinct data
+	INSERT INTO auth
+		SELECT * FROM auth_tmp WHERE name NOT IN (SELECT name FROM auth);
+
+	INSERT INTO address
+		SELECT * FROM address_tmp WHERE ip NOT IN (SELECT ip FROM address);
+
+	INSERT INTO active
+		SELECT * FROM active_tmp WHERE id NOT IN (SELECT id FROM active);
+
+	INSERT INTO expired
+		SELECT * FROM expired_tmp;
+
+	-- clean up
+	DROP TABLE auth_tmp;
+	DROP TABLE address_tmp;
+	DROP TABLE active_tmp;
+	DROP TABLE expired_tmp;
+
+	COMMIT;
+
+	PRAGMA foreign_keys = ON;
+
+	VACUUM;
+	]]
+end
+
 --[[
 ###########################
 ###  Database: Queries  ###
 ###########################
 ]]
 
---- Fetches id using players name
+--- Fetch id using players name
 ---@param name string
 ---@return integer or nil
 local function get_id_by_name(name)
@@ -214,7 +368,7 @@ local function get_id_by_name(name)
 	end
 end
 
---- Fetches id using players ip address
+--- Fetch id using players ip address
 ---@param ip_address string
 ---@return integer or nil
 local function get_id_by_ip(ip_address)
@@ -389,7 +543,7 @@ local function auth_check_name(name)
 	return row
 end
 
--- Creates table of auth names
+-- Create table of auth names
 ---@return table keypair or {}
 local function auth_get_names()
 	local r,q = {}
@@ -431,7 +585,7 @@ end
 ###########################
 ]]
 
--- Creates ip record
+-- Create a new ip record
 ---@param id integer
 ---@param ip string
 ---@param timestamp integer
@@ -450,7 +604,7 @@ local function add_ip_record(id, ip, timestamp)
 	return db_exec(s)
 end
 
--- Creates whitelist record
+-- Create a new whitelist record
 ---@param source string
 ---@param name_or_ip string
 ---@param timestamp integer
@@ -463,7 +617,7 @@ local function add_whitelist_record(source, name_or_ip, timestamp)
 	return db_exec(s)
 end
 
--- Creates blacklist record
+-- Create a new blacklist record
 ---@param source string
 ---@param name_or_ip string
 ---@param reason string
@@ -477,7 +631,7 @@ local function add_blacklist_record(source, name_or_ip, reason, timestamp)
 	return db_exec(s)
 end
 
--- Creates ban record
+-- Create a new ban record
 ---@param id integer
 ---@param name string
 ---@param source string
@@ -493,7 +647,7 @@ local function create_ban_record(id, name, source, reason, timestamp, expires, p
 	return db_exec(s)
 end
 
--- Creates setting and stores data
+-- Add a new setting to the config table
 ---@param setting string
 ---@param data string
 -- returns true or false with error message
@@ -504,7 +658,7 @@ local function add_setting_record(setting, data)
 	return db_exec(s)
 end
 
--- Creates full auth record
+-- Create a new auth record
 ---@param id integer
 ---@param name string
 ---@param password string hash
@@ -525,7 +679,7 @@ local function add_auth_record(id, name, password, privs, last_login)
 	return db_exec(s)
 end
 
--- Creates a violation record
+-- Create a new violation record
 ---@param id integer
 ---@param data string
 -- returns true or false with error message
@@ -542,7 +696,7 @@ end
 ###########################
 ]]
 
--- Updates auth record last_login & login_count fields
+-- Update login for an auth record
 ---@param name string
 ---@param timestamp integer
 -- returns true or false with error message
@@ -556,7 +710,7 @@ local function update_login_record(name, timestamp)
 	return db_exec(s)
 end
 
--- Updates address record
+-- Update login for an address record
 ---@param id integer
 ---@param ip string
 ---@param timestamp integer
@@ -572,7 +726,7 @@ local function update_address_record(id, ip, timestamp)
 	return db_exec(s)
 end
 
--- Updates ban record
+-- Move ban to expired table & delete active record
 ---@param id integer
 ---@param source string
 ---@param reason string
@@ -589,20 +743,20 @@ local function update_ban_record(id, source, reason, name, timestamp)
 	return db_exec(s)
 end
 
--- Updates violation status
+-- Update violation status for an ip
 ---@param ip string
 -- returns true or false with error message
 local function update_idv_status(ip)
 	local s = ([[
 	UPDATE address
 	SET
-	violation = 1
+	violation = vioation + 1
 	WHERE ip = '%s';
 	]]):format(ip)
 	return db_exec(s)
 end
 
--- Updates auth password hash field
+-- Update auth record password field
 ---@param name string
 ---@param password string
 -- returns true or false with error message
@@ -613,7 +767,7 @@ local function update_password(name, password)
 	return db_exec(s)
 end
 
--- Updates player privs field
+-- Update auth record privileges field
 ---@param name string
 ---@param privs string
 -- returns true or false with error message
@@ -624,7 +778,7 @@ local function update_privileges(name, privs)
 	return db_exec(s)
 end
 
--- Updates violation record
+-- Update violation record data field
 ---@param id integer
 ---@param data string
 -- returns true or false with error message
@@ -635,7 +789,7 @@ local function update_idv_record(id, data)
 	return db_exec(s)
 end
 
---- Updates config setting
+--- Update config setting record
 ---@param setting any
 ---@param data any
 -- returns true or false with error message
@@ -653,7 +807,7 @@ end
 ##################################
 ]]
 
--- Removes ban records
+-- Remove a ban record by id
 ---@param id integer
 -- returns true or false with error message
 local function del_ban_record(id)
@@ -663,7 +817,7 @@ local function del_ban_record(id)
 	return db_exec(s)
 end
 
--- Removes whitelist entry
+-- Remove a whitelist record by name or ip
 ---@param name_or_ip string
 -- returns true or false with error message
 local function del_whitelist_record(name_or_ip)
@@ -673,7 +827,7 @@ local function del_whitelist_record(name_or_ip)
 	return db_exec(s)
 end
 
--- Removes blacklist entry
+-- Remove a blacklist entry by name or ip
 ---@param name_or_ip string
 -- returns true or false with error message
 local function del_blacklist_record(name_or_ip)
@@ -683,7 +837,7 @@ local function del_blacklist_record(name_or_ip)
 	return db_exec(s)
 end
 
--- Removes auth entry
+-- Remove an auth entry by name
 ---@param name string
 -- returns true or false with error message
 local function del_auth_record(name)
@@ -693,7 +847,7 @@ local function del_auth_record(name)
 	return db_exec(s)
 end
 
---- Removes address records by id
+--- Remove address records by id
 ---@param id integer
 -- returns true or false with error message
 local function del_address_records(id)
@@ -710,7 +864,7 @@ end
 ]]
 
 
--- Converts value to seconds (src: xban2)
+-- Convert value to seconds (src: xban2)
 ---@param str string containing alphanumerical duration
 -- returns integer seconds of duration
 local function parse_time(str)
@@ -721,7 +875,7 @@ local function parse_time(str)
 	return s
 end
 
--- Converts UTC to human readable date format
+-- Convert UTC integer to human readable date format
 ---@param utc_int integer, seconds since epoch
 -- returns datetime string
 local function hrdf(utc_int)
@@ -730,14 +884,14 @@ local function hrdf(utc_int)
 	end
 end
 
--- Incrememnts db id
+-- Incrememnt db id
 -- returns id
 local function inc_id()
 	ID = ID + 1
 	return ID
 end
 
--- Fetches an id for an ip or name
+-- Get an id by name or ip
 ---@param name_or_ip string
 -- returns id integer
 local function get_id(name_or_ip)
@@ -761,8 +915,9 @@ local function get_id(name_or_ip)
 	return id
 end
 
--- Kicks players by name or id
+-- Kick players by name or id, a message is required
 ---@param name_or_id string or integer
+---@param msg string
 local function kick_player(name_or_id, msg)
 	local r
 	if type(name_or_id) == "number" then
@@ -783,7 +938,7 @@ local function kick_player(name_or_id, msg)
 	end
 end
 
--- Creates ban entry
+-- Create and cache a new ban entry
 ---@param name string
 ---@param source string
 ---@param reason string
@@ -847,7 +1002,7 @@ local function create_ban(name, source, reason, expires)
 	return r
 end
 
--- Creates and caches ip record
+-- Create and caches a new ip record
 ---@param id integer
 ---@param ip string
 -- returns bool
@@ -864,7 +1019,7 @@ local function add_ip(id, ip)
 	return r
 end
 
--- Creates auth records
+-- Create a new auth record
 ---@param name string
 ---@param password string
 ---@param privs string
@@ -890,7 +1045,7 @@ local function create_authx_entry(name, password, privs, last_login)
 	return r
 end
 
---- Adds config setting to db
+--- Add new config setting to db
 ---@param setting string
 ---@param data string
 -- returns bool
@@ -904,7 +1059,7 @@ local function add_setting(setting, data)
 	return r
 end
 
---- Creates new whitelist entry in database
+--- Create a new whitelist entry
 ---@param source string
 ---@param name_or_ip string
 -- returns bool
@@ -919,7 +1074,7 @@ local function add_whitelist_entry(source, name_or_ip)
 	return r
 end
 
--- Remove whitelist entry
+-- Remove a whitelist entry
 ---@param name_or_ip string
 -- returns bool
 local function del_whitelist_entry(name_or_ip)
@@ -932,7 +1087,7 @@ local function del_whitelist_entry(name_or_ip)
 	return r
 end
 
--- Create blacklist record
+-- Create a new blacklist entry
 ---@param source string
 ---@param name_or_ip string
 ---@param reason string
@@ -957,7 +1112,7 @@ local function add_blacklist_entry(source, name_or_ip, reason)
 	return r
 end
 
--- Remove blacklist entry
+-- Remove a blacklist entry
 ---@param name_or_ip string
 -- returns bool
 local function del_blacklist_entry(name_or_ip)
@@ -974,7 +1129,7 @@ local function del_blacklist_entry(name_or_ip)
 	return r
 end
 
--- Update address record
+-- Update an address entry
 ---@param id integer
 ---@param ip string
 -- returns bool
@@ -990,7 +1145,7 @@ local function update_address(id, ip)
 	return r
 end
 
--- Update ban record
+-- Remove active ban entry
 ---@param id integer
 ---@param source string
 ---@param reason string
@@ -1010,8 +1165,7 @@ local function update_ban(id, source, reason, name)
 	return r
 end
 
-
--- Update login for player
+-- Update auth entry login for a player
 ---@param name string
 -- returns bool
 local function update_login(name)
@@ -1030,7 +1184,7 @@ local function update_login(name)
 	return r
 end
 
---- Updates db config setting
+--- Update db config setting
 ---@param setting any
 ---@param data any
 -- returns bool
@@ -1044,7 +1198,7 @@ local function update_setting(setting, data)
 	return r
 end
 
--- Create ip violation record
+-- Create new ip violation entry
 ---@param src_id integer
 ---@param target_id integer
 ---@param ip string
@@ -1099,7 +1253,7 @@ local function manage_idv_record(src_id, target_id, ip)
 	end
 end
 
--- Fetch auth record by name
+-- Get auth entry by name
 ---@param name string
 -- returns keypair table record
 local function auth_get(name)
@@ -1500,7 +1654,7 @@ authx.auth_handler = {
 		return get_names(name)
 	end,
 
-	--- Fetches all names in the auth table
+	--- Fetch all names in the auth table
 	---returns iterator function
 	iterate = function()
 		return pairs(auth_get_names())
@@ -2140,167 +2294,7 @@ end
 ##############
 ]]
 
-if importer then
-
-	createDb = [[
-	CREATE TABLE IF NOT EXISTS active (
-		id INTEGER(10) PRIMARY KEY,
-		name VARCHAR(50),
-		source VARCHAR(50),
-		created INTEGER(30),
-		reason VARCHAR(300),
-		expires INTEGER(30),
-		pos VARCHAR(50)
-	);
-
-	CREATE TABLE IF NOT EXISTS auth (
-	id INTEGER(10),
-	name VARCHAR(32) PRIMARY KEY,
-	password VARCHAR(512),
-	privileges VARCHAR(512),
-	last_login INTEGER(30),
-	login_count INTEGER(8) DEFAULT(1),
-	created INTEGER(30)
-	);
-	CREATE INDEX IF NOT EXISTS idx_auth_id ON auth(id);
-	CREATE INDEX IF NOT EXISTS idx_auth_name ON auth(name);
-
-	CREATE TABLE IF NOT EXISTS expired (
-		id INTEGER(10),
-		name VARCHAR(50),
-		source VARCHAR(50),
-		created INTEGER(30),
-		reason VARCHAR(300),
-		expires INTEGER(30),
-		u_source VARCHAR(50),
-		u_reason VARCHAR(300),
-		u_date INTEGER(30),
-		last_pos VARCHAR(50)
-	);
-	CREATE INDEX IF NOT EXISTS idx_expired_id ON expired(id);
-
-	CREATE TABLE IF NOT EXISTS address (
-		id INTEGER(10),
-		ip VARCHAR(50) PRIMARY KEY,
-		created INTEGER(30),
-		last_login INTEGER(30),
-		login_count INTEGER(8) DEFAULT(1),
-		violation BOOLEAN
-	);
-	CREATE INDEX IF NOT EXISTS idx_address_id ON address(id);
-	CREATE INDEX IF NOT EXISTS idx_address_lastlogin ON address(last_login);
-
-	CREATE TABLE IF NOT EXISTS whitelist (
-		name_or_ip VARCHAR(50) PRIMARY KEY,
-		source VARCHAR(50),
-		created INTEGER(30)
-	);
-
-	CREATE TABLE IF NOT EXISTS blacklist (
-		name_or_ip VARCHAR(50) PRIMARY KEY,
-		reason VARCHAR(300),
-		source VARCHAR(50),
-		created INTEGER(30)
-	);
-
-	CREATE TABLE IF NOT EXISTS config (
-		setting VARCHAR(28) PRIMARY KEY,
-		data VARCHAR(255)
-	);
-
-	CREATE TABLE IF NOT EXISTS violation (
-		id INTEGER PRIMARY KEY,
-		data VARCHAR
-	);
-
-	]]
-	db_exec(createDb)
-
-	tmp_db = [[
-	CREATE TABLE IF NOT EXISTS auth_tmp (
-		id INTEGER(10),
-		name VARCHAR(32),
-		password VARCHAR(512),
-		privileges VARCHAR(512),
-		last_login INTEGER(30),
-		login_count INTEGER(8) DEFAULT(1),
-		created INTEGER(30)
-	);
-
-	CREATE TABLE IF NOT EXISTS address_tmp (
-		id INTEGER(10),
-		ip VARCHAR(50),
-		created INTEGER(30),
-		last_login INTEGER(30),
-		login_count INTEGER(8) DEFAULT(1),
-		violation BOOLEAN
-	);
-
-	CREATE TABLE IF NOT EXISTS active_tmp (
-		id INTEGER(10),
-		name VARCHAR(50),
-		source VARCHAR(50),
-		created INTEGER(30),
-		reason VARCHAR(300),
-		expires INTEGER(30),
-		pos VARCHAR(50)
-	);
-
-	CREATE TABLE IF NOT EXISTS expired_tmp (
-		id INTEGER(10),
-		name VARCHAR(50),
-		source VARCHAR(50),
-		created INTEGER(30),
-		reason VARCHAR(300),
-		expires INTEGER(30),
-		u_source VARCHAR(50),
-		u_reason VARCHAR(300),
-		u_date INTEGER(30),
-		last_pos VARCHAR(50)
-	);
-
-	]]
-
-	tmp_final = [[
-
-	-- remove duplicate data
-	DELETE FROM auth_tmp WHERE rowid NOT IN (
-		SELECT min(rowid) FROM auth_tmp GROUP BY name);
-
-	DELETE FROM address_tmp WHERE rowid NOT IN (
-		SELECT min(rowid) FROM address_tmp GROUP BY ip);
-
-	DELETE FROM active_tmp where rowid NOT IN (
-		SELECT min(rowid) FROM active_tmp GROUP BY id);
-
-	-- insert distinct data
-	INSERT INTO auth
-		SELECT * FROM auth_tmp WHERE name NOT IN (SELECT name FROM auth);
-
-	INSERT INTO address
-		SELECT * FROM address_tmp WHERE ip NOT IN (SELECT ip FROM address);
-
-	INSERT INTO active
-		SELECT * FROM active_tmp WHERE id NOT IN (SELECT id FROM active);
-
-	INSERT INTO expired
-		SELECT * FROM expired_tmp;
-
-	-- clean up
-	DROP TABLE auth_tmp;
-	DROP TABLE address_tmp;
-	DROP TABLE active_tmp;
-	DROP TABLE expired_tmp;
-
-	COMMIT;
-
-	PRAGMA foreign_keys = ON;
-
-	VACUUM;
-	]]
-end
-
--- initialise current config
+-- Initialise current config
 local current_db_version = get_setting("db_version")
 local current_mod_version = get_setting("mod_version")
 
@@ -2312,7 +2306,7 @@ elseif not current_db_version == db_version then
 	"\nUse sqlite3 to import /tools/authban_update.sql")
 end
 
--- check & update mod version in db
+-- Check & update mod version in db
 if not current_mod_version == mod_version then
 	update_setting("mod_version", mod_version)
 end
@@ -2324,9 +2318,9 @@ bans = get_active_bans()
 ID = last_id() or 0
 owner_id = get_id(owner)
 
--- Adds to and manages size of hotlist
+-- Add name to hotlist
 ---@param name string
-local function manage_hotlist(name)
+local function add_hotlist_entry(name)
 	for _, v in ipairs(hotlist) do
 		if v == name then
 			return -- no duplicates
@@ -2339,7 +2333,7 @@ local function manage_hotlist(name)
 	end
 end
 
--- Manage expired bans
+-- Manage expired bans on mod load
 local function process_expired_bans()
 	local ts = os.time()
 	local tq = {}
@@ -2365,7 +2359,7 @@ local function process_expired_bans()
 end
 process_expired_bans() -- trigger on mod load
 
--- fix irc mod with an override
+-- Modify irc mod with an override
 if minetest.get_modpath('irc') ~= nil then
     irc.reply = function(message) -- luacheck: ignore
         if not irc.last_from then -- luacheck: ignore
@@ -2416,7 +2410,7 @@ local function create_info(entry)
 	return str
 end
 
--- Fetch formstate, initialising if reqd
+-- Get formstate, initialising if reqd
 ---@param name string
 -- returns keypair state table
 local function get_state(name)
@@ -2538,14 +2532,14 @@ local function getformspec(name)
 	return table.concat(f)
 end
 
--- Register form submission callbacks
+-- Register callback for form submission
 minetest.register_on_player_receive_fields(function(player, formname, fields)
 
+	-- Only handle this form!
 	if formname ~= FORMNAME then return end
 
 	local name = player:get_player_name()
 	local privs = minetest.get_player_privs(name)
-	local fs = get_state(name)
 
 	if not privs.ban then
 		minetest.log(
@@ -2554,6 +2548,8 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
 		'detected using a hacked client to access the ban GUI!', 0)
 		return
 	end
+
+	local fs = get_state(name)
 
 	if fields.find then
 
@@ -2677,6 +2673,21 @@ minetest.override_chatcommand("ban", {
 	end
 })
 
+-- Register GUI command
+minetest.register_chatcommand("bang", {
+	description = "Launch authx gui",
+	privs = {ban = true},
+	func = function(name)
+		formstate[name] = nil
+		local fs = get_state(name)
+		fs.list = hotlist
+		for i,v in ipairs(fs.list) do
+			fs.hlist[i] = v
+		end
+		minetest.show_formspec(name, FORMNAME, getformspec(name))
+	end
+})
+
 -- Register ban deletion command
 minetest.register_chatcommand("ban_del", {
 	description = "Deletes a player's authx records",
@@ -2728,21 +2739,6 @@ minetest.register_chatcommand("ban_record", {
 			return false, "Insufficient privileges to access that information"
 		end
 		return true, display_record(name, playername)
-	end
-})
-
--- Register GUI command
-minetest.register_chatcommand("bang", {
-	description = "Launch authx gui",
-	privs = {ban = true},
-	func = function(name)
-		formstate[name] = nil
-		local fs = get_state(name)
-		fs.list = hotlist
-		for i,v in ipairs(fs.list) do
-			fs.hlist[i] = v
-		end
-		minetest.show_formspec(name, FORMNAME, getformspec(name))
 	end
 })
 
@@ -2960,12 +2956,6 @@ end)
 -- Note: triggers before auth handler
 minetest.register_on_prejoinplayer(function(name, ip)
 
-	-- blacklist check
-	local bl = BL[name] or BL[ip_key(ip)]
-	if bl then
-		return 'Banned: Expires: end of time, Reason: ' .. bl.reason
-	end
-
 	local id
 	local obj = auth_get(name)
 
@@ -2983,6 +2973,7 @@ minetest.register_on_prejoinplayer(function(name, ip)
 			-- log event in db
 			manage_idv_record(obj.id, target_id, ip)
 			update_idv_status(ip)
+			update_address(target_id, ip) -- update record
 		else
 			update_address(obj.id, ip) -- update record
 		end
@@ -2999,7 +2990,7 @@ minetest.register_on_prejoinplayer(function(name, ip)
 				"or use a different name."):format(name, chk.name)
 		end
 
-		-- Add entry to prejoin cache
+		-- Init prejoin cache entry
 		pjc[name] = {ip = ip, new = false}
 
 		-- Fetch id, existing or new
@@ -3008,11 +2999,17 @@ minetest.register_on_prejoinplayer(function(name, ip)
 			id = inc_id()
 			pjc[name].new = true
 		end
-		pjc[name].id = id
+		pjc[name].id = id -- init id entry
 
 	end
 
-	-- allow whitelist entries
+	-- Blacklist check
+	local bl = BL[name] or BL[ip_key(ip)]
+	if bl then
+		return 'Banned: Expires: end of time, Reason: ' .. bl.reason
+	end
+
+	-- Whitelist check
 	if WL[name] or WL[ip] then
 		minetest.log("action", (
 			"[authx] %s authorised by whitelist entry"))
@@ -3023,7 +3020,7 @@ minetest.register_on_prejoinplayer(function(name, ip)
 
 	local data = bans[id]
 	if not data then
-		-- names per id present in conf?
+		-- Check names per id present in conf
 		if names_per_id then
 			-- names per id
 			local names = name_records(id)
@@ -3044,7 +3041,7 @@ minetest.register_on_prejoinplayer(function(name, ip)
 				..msg)
 			end
 		end
-		-- ip's per id present in conf?
+		-- Check ip's per id present in conf
 		if ip_limit then
 			local t = address_records(id)
 			for _,v in ipairs(t) do
@@ -3056,11 +3053,11 @@ minetest.register_on_prejoinplayer(function(name, ip)
 		end
 
 	else
-		-- check for ban expiry
+		-- Check for ban expiry
 		local date = "the end of time"
 
 		if type(data.expires) == "number" and data.expires ~= 0 then
-			-- temp ban
+			-- Temp ban
 			if os.time() > data.expires then
 				-- clear temp ban
 				update_ban(data.id, "authx", "ban expired", name)
@@ -3076,9 +3073,9 @@ end)
 
 -- Register callback for join event
 minetest.register_on_joinplayer(function(player)
-	-- Fetch name from te player obj
+	-- Fetch name from the player obj
 	local name = player:get_player_name()
 	-- Add player to the hotlist
-	manage_hotlist(name)
+	add_hotlist_entry(name)
 	trim_cache()
 end)
