@@ -4,9 +4,9 @@
 
 # authx
 
-If you use sauth and sban then this mod is for you, it combines the functionality of both in
+If you use sauth and sban and don't mind me breaking the holy grail of combining mods, then this mod is for you, it combines the functionality of both in
 a single database, adding account restrictions based on number of accounts per id,
-ip addresses per id, and naming restrictions like similarity and length.
+ip addresses per id, and naming restrictions like similarity and length. In theory it should be faster than having 2 separate mods as the db calls are from a single sqlite instance, with the ban check occuring at the point minetest authenticates the player join event by calling the registered handler. This means less work for your server. Caching is an integral part of how the mod is attempting to speed up access and mitigate minetest's constant core requests for player information.
 
 It's a one stop solution for authenticating players with optional control.
 
@@ -40,7 +40,7 @@ using the arrows that appear.
 ``` Usage: /bang ```
 
 <b>Please note</b> accessing the gui formspec using a modified client without serverside
-privs is coded to ban the player
+privs has been coded to ban the player
 
 #### ban
 
@@ -177,7 +177,7 @@ Do this before enabling xban2 mod otherwise it will be overwritten by the curren
 
 Example: //whois sadie
 
-Returns all known accounts and the last ip addresses associated with a player name.
+Returns all known accounts and the last ip address associated with a player name.
 Use the v option to get the list of ip addresses (display_max still limits amount displayed)
 #### CONFIG
 
