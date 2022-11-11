@@ -4,11 +4,11 @@
 
 # authx
 
-If you use sauth and sban and don't mind me breaking the holy grail of combining mods, then this mod is for you, it combines the functionality of both in
-a single database, adding account restrictions based on number of accounts per id,
-ip addresses per id, and naming restrictions like similarity and length. In theory it should be faster than having 2 separate mods as the db calls are from a single sqlite instance, with the ban check occuring at the point minetest authenticates the player join event by calling the registered handler. This means less work for your server. Caching is an integral part of how the mod is attempting to speed up access and mitigate minetest's constant core requests for player information.
+If you use sauth and sban and don't mind breaking the holy grail of combining mods, then this mod is for you, it combines the functionality of both in
+a single database, adding account restrictions based on number of accounts per id,ip addresses per id, and naming restrictions like similarity and length. 
+In theory it should be faster than having 2 separate mods as the db calls are from a single sqlite instance, with the ban check occuring in the player prejoin event prior to authentification. This means less work for your server. Caching is an integral part of how the mod is attempting to speed up access and mitigate minetest's constant core requests for player information. 
 
-It's a one stop solution for authenticating players with optional control.
+It's a one stop solution for authenticating and managing players.
 
 #### INSTALLATION
 
@@ -34,12 +34,12 @@ of some commands.
 
 Launches the GUI. Comprehensive management of bans via a user interface for convenience.
 On launch the interface shows a list containing the last 10 players to join. Use search
-to find a player if they are not in the list. Multiple records are shown if available, by
+to find a player if they are not in the list. Multiple records are shown if available, which you can navigate by
 using the arrows that appear.
 
 ``` Usage: /bang ```
 
-<b>Please note</b> accessing the gui formspec using a modified client without serverside
+note: accessing the gui formspec using a modified client without serverside
 privs has been coded to ban the player
 
 #### ban
@@ -77,7 +77,7 @@ Unbans a player.
 
 Example: /unban Steve Some reason.
 
-Note that this command requires a reason and works for pre-emptive bans
+Note: this command requires a reason and works for pre-emptive bans
 
 #### ban_record
 
@@ -99,8 +99,7 @@ The ban record includes a list of all ban related actions performed on the playe
 under any known name or IP address. This includes the time a ban came into effect,
 the expiration time (if applicable), the reason, and the source of the ban.
 
-Note that the records of players with the server privilege can only be viewed
-by other players with the server privilege.
+Note: access to records of players with the server privilege is restricted to players with the server privilege.
 
 #### ban_wl
 
@@ -178,7 +177,7 @@ Do this before enabling xban2 mod otherwise it will be overwritten by the curren
 Example: //whois sadie
 
 Returns all known accounts and the last ip address associated with a player name.
-Use the v option to get the list of ip addresses (display_max still limits amount displayed)
+Use the v option to get the list of ip addresses (display_max limited)
 #### CONFIG
 
 You can add these optional settings to minetest.conf to adjust the authx mod's
@@ -186,7 +185,7 @@ behaviour.
 
 #### auth.api
 
-Controls loading of the API functions. Default is false.
+Boolean that controls loading of the API functions. Default: false
 
 	authx.api = true
 
@@ -194,7 +193,7 @@ This would load the API functions and allow other mods access via the global aut
 
 #### authx.display_max
 
-Changes the maximum number of player records displayed when using the /ban_record
+Integer used for the maximum number of player records displayed when using the /ban_record
 command.
 
 	authx.display_max = 12
@@ -218,19 +217,19 @@ expiry date.
 
 #### authx.accounts_per_id
 
-Restricts accounts a player can make with an id.
+Integer used to restrict accounts a player can make with an id.
 
 	authx.accounts_per_ip = 5
 
-Please note this is optional and without the setting the player accounts are unrestricted.
+Please note this is optional and without the setting player accounts are unrestricted.
 
 #### authx.addresses_per_id
 
-Restricts number of addresses a player can use with an id.
+Integer used to restrict number of addresses a player can use with an id.
 
 	authx.addresses_per_id = 10
 
-Please note this is optional and without the setting the player accounts are unrestricted.
+Please note this is optional and without the setting player accounts are unrestricted.
 
 #### authx.import_enabled
 
@@ -239,26 +238,21 @@ Disables the import/export sections of code.
 	authx.import_enabled = false
 
 The default is true, this setting allows you to save memory by disabling the code and commands associated with
-importing & exporting data and should only be set to false once you have imported any ban sources.
+importing & exporting data and can be set to false once you have imported any ban sources.
 
 #### authx.cache.max
 
-Maximum cached name records.
+Integer used to cap the maximum number of cached name records. Default: 1000
 
 	authx.cache.max = 1000
 
-If you don't add this setting authx will use the value above as the default.
+Disable name caching by setting to 0
 
 #### authx.cache.ttl
 
-Time in seconds to deduct from the last player to login as the cutoff point for pre caching names.
+Time in seconds to deduct from the last player login timestamp as the cutoff point for caching records. Default: 86400 (24h)
 
-	authx.cache.max = 86400
+	authx.cache.ttl = 432000
 
-If you don't add this setting authx will use the value above as the default. Disable name caching by setting to -2
-
-
-#### CREDITS
-
-Thanks to:
+Will set the cutoff point for the build cache query to 5 days prior to the timestamp on the last player to login to your server.
 
